@@ -30,7 +30,7 @@ function readFile(file) {
   })
 }
 
-export default function TaskSetup({ view, onSetup, error }) {
+export default function TaskSetup({ view, onSetup, error, studyMode }) {
   const [files, setFiles] = useState([])
   const [entry, setEntry] = useState('')
   const [busy, setBusy] = useState(null)
@@ -69,7 +69,15 @@ export default function TaskSetup({ view, onSetup, error }) {
 
   return (
     <div className="setup">
-      <div className="card setup-card">
+      {studyMode && (
+        <div className="card setup-card setup-example">
+          <h3>This task uses a fixed example</h3>
+          <p className="muted small">Uploading your own code is disabled during this study, so that every
+            participant works on the same tasks.</p>
+          <button className="btn btn-primary" disabled={!!busy} onClick={example}>{busy === 'example' ? 'Loading…' : 'Continue'}</button>
+        </div>
+      )}
+      {!studyMode && <div className="card setup-card">
         <h2>Upload your code</h2>
         <p className="muted">
           Add the Python files you're working on and any learning materials (assignment instructions, lecture notes).
@@ -129,9 +137,9 @@ export default function TaskSetup({ view, onSetup, error }) {
           {busy === 'upload' ? (view.ai_enabled && (!hasTests || !hasMaterials) ? 'Setting up… the AI is reading your files' : 'Setting up…') : 'Use these files'}
         </button>
         {!codeFiles.length && files.length > 0 && <p className="muted small">Add at least one .py file that isn't a test file.</p>}
-      </div>
+      </div>}
 
-      {view.examples_left && (
+      {!studyMode && view.examples_left && (
         <div className="card setup-card setup-example">
           <h3>No code of your own?</h3>
           <p className="muted small">Use a ready-made example task with a small bug. Explanations and changes work even without the AI.</p>
