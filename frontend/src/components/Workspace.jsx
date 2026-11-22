@@ -4,6 +4,7 @@ import CodeViewer from './CodeViewer.jsx'
 import RequestPanel from './RequestPanel.jsx'
 import ExplanationPanel from './ExplanationPanel.jsx'
 import ChangesPanel from './ChangesPanel.jsx'
+import ComprehensionPanel from './ComprehensionPanel.jsx'
 import ChecksPanel from './ChecksPanel.jsx'
 import HistoryDrawer from './HistoryDrawer.jsx'
 import TaskSetup from './TaskSetup.jsx'
@@ -13,10 +14,11 @@ const STAGES = [
   { id: 'request', n: 1, title: 'Ask for help' },
   { id: 'explain', n: 2, title: 'Explanations' },
   { id: 'changes', n: 3, title: 'Proposed changes' },
-  { id: 'checks', n: 4, title: 'Run checks' },
+  { id: 'comprehension', n: 4, title: 'Check your understanding' },
+  { id: 'checks', n: 5, title: 'Run checks' },
 ]
 
-export default function Workspace({ pid, idx, onFinished }) {
+export default function Workspace({ pid, idx, studyMode, onFinished }) {
   const [view, setView] = useState(null)
   const [stage, setStage] = useState('request')
   const [focus, setFocus] = useState(null)
@@ -84,6 +86,11 @@ export default function Workspace({ pid, idx, onFinished }) {
   }
 
   const finish = async () => {
+    if (view.comprehension && !view.comprehension.answered) {
+      setError('Please answer the comprehension questions before finishing this task.')
+      setStage('comprehension')
+      return
+    }
     if (!window.confirm("Finish this task and go to the questions about it? You won't be able to come back to this task.")) return
     try {
       const s = await api.post(`${base}/finish`)
@@ -103,7 +110,7 @@ export default function Workspace({ pid, idx, onFinished }) {
           <div className="eyebrow">Task {idx + 1} of {view.total}</div>
           <h2>Set up this task</h2>
         </div></div>
-        <TaskSetup view={view} error={error} onSetup={async (body) => {
+        <TaskSetup view={view} error={error} studyMode={studyMode} onSetup={async (body) => {
           const v = await call('/setup', body)
           setActiveFile(v.file_order[0])
           log('setup_done', { mode: body.mode })
@@ -118,6 +125,7 @@ export default function Workspace({ pid, idx, onFinished }) {
     request: sent ? 'sent' : 'start here',
     explain: sent ? (view.proposals.length ? `${view.proposals.length} explanations` : (view.generation?.status === 'failed' ? 'generation failed' : 'not available')) : '',
     changes: sent ? (view.applied.length ? `${view.applied.length} in effect` : 'none applied') : '',
+    comprehension: sent ? (view.comprehension ? (view.comprehension.answered ? 'answered' : 'not answered yet') : 'not available') : '',
     checks: lastRun ? `${lastRun.results.filter((r) => r.status === 'pass').length}/${lastRun.results.length} passed` : 'not run yet',
   }
 
@@ -143,7 +151,7 @@ export default function Workspace({ pid, idx, onFinished }) {
 
       <nav className="stepper">
         {STAGES.map((s) => (
-          <button key={s.id} disabled={!sent && (s.id === 'explain' || s.id === 'changes')}
+          <button key={s.id} disabled={!sent && (s.id === 'explain' || s.id === 'changes' || s.id === 'comprehension')}
             className={`step ${stage === s.id ? 'active' : ''}`} onClick={() => goStage(s.id)}>
             <span className="step-n">{s.n}</span>
             <span className="step-title">{s.title}</span>
@@ -176,6 +184,9 @@ export default function Workspace({ pid, idx, onFinished }) {
             <ChangesPanel view={view} call={call} showRef={showRef} log={log} setToast={setToast}
               active={activeProposal} setActive={setActiveProposal}
               toExplanation={(id) => openProposal(id, 'explain')} goStage={goStage} />
+          )}
+          {stage === 'comprehension' && sent && (
+            <ComprehensionPanel view={view} call={call} log={log} />
           )}
           {stage === 'checks' && (
             <ChecksPanel view={view} call={call} showRef={showRef} log={log} goStage={goStage} />

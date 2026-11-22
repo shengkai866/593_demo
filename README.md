@@ -92,8 +92,11 @@ The top-right corner shows **AI connected** if the key works, or **AI offline: s
 
 ## Using the app
 
-1. **Start**: enter an optional participant label (e.g. `P07`) and click Start.
-2. **Tasks** (3 by default). Each task starts with a setup page:
+1. **Start**: read the consent text, check the consent and eligibility boxes, optionally enter a participant label
+   (e.g. `P07`), and click Start.
+2. **Background questionnaire**: a short set of questions about programming/Python/AI-tool experience.
+3. **Tasks** (3 by default). Each task starts with a setup page (with `STUDY_MODE=1`, uploading is disabled and the
+   task goes straight to the fixed example):
    - **Upload your files** (drag and drop, or click):
      - `.py` files are your code. Files named `test_*.py` or `*_test.py` are treated as tests.
      - `.txt`, `.md`, and `.pdf` files are learning materials (assignment instructions, lecture notes). PDFs need
@@ -118,7 +121,7 @@ The top-right corner shows **AI connected** if the key works, or **AI offline: s
 
    Uploaded materials appear as 📄 tabs next to the code files. Click **I'm done with this task** to answer a short
    questionnaire about the task.
-3. **Final questionnaire**, then a thank-you screen.
+4. **Final questionnaire**, then a thank-you screen.
 
 To start over with a new participant, click **New participant** in the top-right corner. Refreshing the page resumes
 the current participant.
@@ -128,13 +131,17 @@ the current participant.
 Each participant is saved as one file: `backend/data/sessions/<participant-id>.json`. It contains the uploaded files,
 questionnaire answers, the state of each task, and a timestamped event log of their actions.
 
-The backend also has two JSON endpoints for researchers:
+The backend also has endpoints for researchers:
 
 - http://localhost:8000/api/admin/sessions lists all participants and how far they got.
 - http://localhost:8000/api/admin/sessions/<participant-id> gives a per-task summary and the raw session. For each
-  proposed change, the summary shows which kind it was (necessary / ineffective / partial), how many checks it
-  actually makes pass (`verified`), and whether the participant applied or rejected it. It also includes final
-  pass/fail and time on task.
+  proposed change, the summary shows which kind it was (necessary / ineffective / partial / incorrect), how many
+  checks it actually makes pass (`verified`), whether the participant applied or rejected it, and whether their
+  stated predicted effect for it matched its actual kind (`effect_judgment_correct`). It also includes the
+  comprehension-question answers and correctness, final pass/fail, and time on task.
+- http://localhost:8000/api/admin/export.csv downloads a CSV with one row per participant per completed task, using
+  the same column names for every evaluator (background, goal, R2/R5/R6 measures, task duration, completion status)
+  — this is the file to share for the Individual report's raw data and to merge for the Group analysis.
 
 To clear all test data, stop the backend and delete `backend/data/`.
 
@@ -149,6 +156,7 @@ To clear all test data, stop the backend and delete `backend/data/`.
 | `AI_MAX_TOKENS` | `4000` | Max length of one chat answer |
 | `AI_DISABLED` | `0` | `1` forces scripted answers even if a key is set |
 | `TASKS_PER_PARTICIPANT` | `3` | Number of tasks per participant |
+| `STUDY_MODE` | `0` | `1` disables "upload your own code" during formal study sessions, so every participant uses the same fixed example tasks |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Allowed frontend origins |
 
 Restart the backend after changing `.env`.

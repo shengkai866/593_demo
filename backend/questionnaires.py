@@ -4,79 +4,70 @@ Question types: single, multi, likert (scale + labels), number, text.
 `required` defaults to True except for text questions.
 """
 
-LIKERT7 = {"type": "likert", "scale": 7, "labels": ["Strongly disagree", "Strongly agree"]}
-LIKERT5 = {"type": "likert", "scale": 5, "labels": ["Strongly disagree", "Strongly agree"]}
-
-
-def L7(qid, text, req=None):
-    q = {"id": qid, "text": text, **LIKERT7}
-    if req:
-        q["requirement"] = req
-    return q
-
+# Pre-study background questionnaire (Protocol Part III, "Pre-Study Background Questionnaire").
+# Wording and options are copied verbatim from the group's shared study protocol.
+BACKGROUND = {
+    "id": "background",
+    "title": "Background questionnaire",
+    "intro": "Before starting the tasks, please complete this brief background questionnaire about your "
+             "programming experience, familiarity with Python, and previous use of AI programming assistants. "
+             "Your responses will help us better understand the backgrounds of participants in this study.",
+    "questions": [
+        {"id": "proficiency", "type": "single",
+         "text": "How would you rate your overall programming proficiency?",
+         "options": ["Beginner", "Basic", "Intermediate", "Advanced", "Expert"]},
+        {"id": "python_experience", "type": "single",
+         "text": "How would you describe your experience with Python?",
+         "options": [
+             "I have never used Python.",
+             "I have used Python a few times.",
+             "I have some experience writing Python programs.",
+             "I regularly write Python programs.",
+             "I have extensive experience with Python programming.",
+         ]},
+        {"id": "python_frequency", "type": "single",
+         "text": "How often have you used Python for programming tasks in the past three months?",
+         "options": ["Never", "Less than once a month", "A few times a month", "A few times a week",
+                     "Daily or almost daily"]},
+        {"id": "ai_usage_frequency", "type": "single",
+         "text": "How often have you used AI programming assistants (e.g., ChatGPT, GitHub Copilot, Cursor, or "
+                 "Claude) for programming tasks in the past three months?",
+         "options": ["Never", "Less than once a month", "A few times a month", "A few times a week",
+                     "Daily or almost daily"]},
+        {"id": "ai_tools_used", "type": "multi",
+         "text": "Which AI programming assistants have you used for programming tasks? (Select all that apply.)",
+         "options": ["ChatGPT", "GitHub Copilot", "Cursor", "Claude", "Gemini", "Other",
+                     "I have not used any AI programming assistants"]},
+        {"id": "ai_tools_other", "type": "text", "required": False,
+         "text": "If you selected \"Other\" above, please specify which AI tool(s)."},
+    ],
+}
 
 POST_TASK = {
     "id": "posttask",
     "title": "About this task",
-    "intro": "Answer based on the task you just finished. 1 = strongly disagree, 7 = strongly agree.",
+    "intro": "Answer based on the task you just finished.",
     "questions": [
-        {"id": "seq", "type": "likert", "scale": 7, "labels": ["Very difficult", "Very easy"],
-         "text": "Overall, how difficult or easy was this task?"},
-        L7("r2_express", "I could tell the AI what I wanted (understand the code, fix it, or both).", "R2"),
-        L7("r2_update", "When my goal changed, I could update it without losing information I had already provided.", "R2"),
-        L7("r5_locate", "I could find the code that each explanation referred to.", "R5"),
-        L7("r5_context", "I could see enough surrounding code to understand each explanation.", "R5"),
-        L7("r5_revisit", "I could go back to an earlier explanation and its code when I needed to.", "R5"),
-        L7("r6_cause", "I understood the proposed cause of the failure.", "R6"),
-        L7("r6_judge", "I could judge whether each proposed change would actually affect the failing behavior.", "R6"),
-        L7("r6_rationale", "I could tell whether the AI's stated reason actually supported each proposed change.", "R6"),
-        L7("r8_choose", "I could choose exactly which changes to apply.", "R8"),
-        L7("r8_state", "After acting, I could tell which changes had taken effect.", "R8"),
-        L7("r8_undo", "I could undo a change I didn't want.", "R8"),
-        {"id": "tlx_mental", "type": "likert", "scale": 7, "labels": ["Very low", "Very high"],
-         "text": "Mental demand: how mentally demanding was the task?"},
-        {"id": "tlx_frustration", "type": "likert", "scale": 7, "labels": ["Very low", "Very high"],
-         "text": "Frustration: how insecure, discouraged, or annoyed were you?"},
-        {"id": "confidence", "type": "likert", "scale": 7, "labels": ["Not at all confident", "Completely confident"],
-         "text": "How confident are you that your final code is correct?"},
-        {"id": "no_effect", "type": "text", "required": False,
-         "text": "Did any proposed change seem unhelpful or have no effect? Which one, and why?"},
+        {"id": "r2_goal_alignment", "type": "likert", "scale": 5, "labels": ["Not at all", "Completely"],
+         "text": "How well did the AI assistance match your stated goal?", "requirement": "R2"},
+        {"id": "overall_satisfaction", "type": "likert", "scale": 5,
+         "labels": ["Very dissatisfied", "Very satisfied"],
+         "text": "Overall, how satisfied are you with the prototype's support for completing this debugging task?"},
     ],
 }
 
+# Closing and debriefing (Protocol Part III): one open-ended question, read verbally by the
+# evaluator in the original protocol - captured here as free text instead.
 FINAL = {
     "id": "final",
-    "title": "Overall experience",
-    "intro": "These questions are about the tool as a whole. 1 = strongly disagree, 5 = strongly agree.",
+    "title": "Closing",
     "questions": [
-        {"id": f"sus{i+1}", "text": t, **LIKERT5} for i, t in enumerate([
-            "I think that I would like to use this system frequently.",
-            "I found the system unnecessarily complex.",
-            "I thought the system was easy to use.",
-            "I think that I would need the support of a technical person to be able to use this system.",
-            "I found the various functions in this system were well integrated.",
-            "I thought there was too much inconsistency in this system.",
-            "I would imagine that most people would learn to use this system very quickly.",
-            "I found the system very cumbersome to use.",
-            "I felt very confident using the system.",
-            "I needed to learn a lot of things before I could get going with this system.",
-        ])
-    ] + [
-        {"id": "prefer", "type": "single", "text": "Compared with the AI tools you normally use, this tool was...",
-         "options": ["Much worse", "Worse", "About the same", "Better", "Much better", "I don't normally use AI tools"]},
-        {"id": "liked", "type": "text", "required": False, "text": "What was most helpful?"},
-        {"id": "disliked", "type": "text", "required": False, "text": "What was confusing or should change?"},
+        {"id": "debrief", "type": "text", "required": False,
+         "text": "Is there anything else you would like to share about your experience using the prototype? For "
+                 "example, did you encounter any difficulties, confusing features, or limitations that we have not "
+                 "discussed?"},
     ],
 }
 
 
-def sus_score(answers: dict):
-    try:
-        vals = [int(answers[f"sus{i}"]) for i in range(1, 11)]
-    except (KeyError, ValueError, TypeError):
-        return None
-    total = sum((v - 1) if i % 2 == 0 else (5 - v) for i, v in enumerate(vals))
-    return total * 2.5
-
-
-ALL = {"posttask": POST_TASK, "final": FINAL}
+ALL = {"background": BACKGROUND, "posttask": POST_TASK, "final": FINAL}
