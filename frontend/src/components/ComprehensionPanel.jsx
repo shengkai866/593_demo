@@ -18,7 +18,7 @@ export default function ComprehensionPanel({ view, call, log }) {
       <div className="panel">
         <h3>Comprehension check</h3>
         <p className="muted">These questions are only available for the built-in example tasks, once the AI's
-          explanations and proposed changes are ready.</p>
+          explanation and suggested change are ready.</p>
       </div>
     )
   }
@@ -50,30 +50,57 @@ export default function ComprehensionPanel({ view, call, log }) {
     }
   }
 
+  const question = (k, quoted) => {
+    const q = comp.questions[k]
+    return (
+      <div key={k} id={`comp-${k}`} className={`question ${showMissing && !choice[k] ? 'question-missing' : ''}`}>
+        <div className="question-text"><b>{LABELS[k]}</b><br />{q.prompt}</div>
+        {quoted}
+        <div className="options">
+          {q.options.map((o) => (
+            <label key={o.id} className={`option ${choice[k] === o.id ? 'selected' : ''}`}>
+              <input type="radio" name={k} checked={choice[k] === o.id}
+                onChange={() => setChoice((c) => ({ ...c, [k]: o.id }))} />
+              <span className="option-letter">{o.id}.</span>
+              {q.code_options ? <code className="option-code">{o.text}</code> : <span>{o.text}</span>}
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="panel">
       <div className="panel-intro">
-        A few questions about the explanation and the proposed change for this task. There's no right-or-wrong
-        feedback shown here — just answer as best you can, then you can move on.
+        A few questions about the AI's explanation and suggested change for this task. There's no right-or-wrong
+        feedback shown here. Just answer as best you can, then you can move on.
       </div>
-      {KEYS.map((k) => {
-        const q = comp.questions[k]
-        return (
-          <div key={k} id={`comp-${k}`} className={`question ${showMissing && !choice[k] ? 'question-missing' : ''}`}>
-            <div className="question-text"><b>{LABELS[k]}</b><br />{q.prompt}</div>
-            <div className="options">
-              {q.options.map((o) => (
-                <label key={o.id} className={`option ${choice[k] === o.id ? 'selected' : ''}`}>
-                  <input type="radio" name={k} checked={choice[k] === o.id}
-                    onChange={() => setChoice((c) => ({ ...c, [k]: o.id }))} /> {o.text}
-                </label>
-              ))}
-            </div>
-          </div>
-        )
-      })}
+
+      {question('localization', comp.r5_explanation && (
+        <Quote label="AI explanation" text={comp.r5_explanation} />
+      ))}
+
+      {(comp.r6_explanation || comp.r6_fix) && (
+        <div className="quote-group">
+          {comp.r6_explanation && <Quote label="AI explanation" text={comp.r6_explanation} />}
+          {comp.r6_fix && <Quote label="AI suggested fix" text={comp.r6_fix} />}
+        </div>
+      )}
+      {question('root_cause')}
+      {question('fix_rationale')}
+
       {showMissing && missing.length > 0 && <p className="error-text">Please answer all {KEYS.length} questions.</p>}
       <button className="btn btn-primary" disabled={busy} onClick={submit}>Submit answers</button>
+    </div>
+  )
+}
+
+function Quote({ label, text }) {
+  return (
+    <div className="ai-quote">
+      <div className="ai-quote-label">{label}</div>
+      <div>{text}</div>
     </div>
   )
 }

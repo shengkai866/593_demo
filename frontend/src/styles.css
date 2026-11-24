@@ -260,12 +260,6 @@ input[type="checkbox"], input[type="radio"] { width: auto; margin-right: 6px; ac
 .behavior.current { background: var(--fail-soft); }
 .behavior.correct { background: var(--ok-soft); }
 .behavior-label { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
-.steps-box { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-top: 14px; }
-.steps-head { display: flex; justify-content: space-between; align-items: center; }
-.steps { margin: 8px 0 4px; padding-left: 22px; }
-.steps li { margin: 4px 0; }
-.steps li.done { color: var(--muted); }
-.steps li label { cursor: pointer; }
 .explanation-actions { margin-top: 14px; display: flex; justify-content: flex-end; }
 
 /* Ask */
@@ -285,12 +279,6 @@ input[type="checkbox"], input[type="radio"] { width: auto; margin-right: 6px; ac
 .hunk-head { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; cursor: pointer; }
 .hunk-icon { width: 18px; text-align: center; color: var(--ok); font-weight: 700; }
 .hunk-conflict .hunk-icon { color: var(--warn); }
-.reasoning { background: #f4f8fa; border: 1px solid #d4e3ea; border-radius: 6px; padding: 10px 12px; margin-top: 12px; }
-.reasoning-q { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0; font-size: 14px; }
-.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-.seg button { font: inherit; font-size: 13px; border: none; border-right: 1px solid var(--border); background: #fff; padding: 4px 10px; cursor: pointer; }
-.seg button:last-child { border-right: none; }
-.seg button.on { background: var(--secondary); color: #fff; }
 .change-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
 .reject-form { border: 1px solid var(--secondary); border-radius: 6px; padding: 10px 12px; margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .simulation { border: 1px solid var(--preview); background: #f3faf5; border-radius: 6px; padding: 10px 12px; margin-top: 12px; }
@@ -364,3 +352,19 @@ input[type="checkbox"], input[type="radio"] { width: auto; margin-right: 6px; ac
 @media (max-width: 1000px) {
   .setup { grid-template-columns: 1fr; }
 }
+
+/* Task instructions: the protocol's example input / outputs */
+.example-io { display: flex; flex-wrap: wrap; gap: 6px 18px; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
+.example-io > div { display: flex; align-items: baseline; gap: 6px; }
+.io-bad { color: var(--fail); }
+.io-good { color: var(--ok); }
+.todo { margin: 6px 0; }
+
+/* Comprehension questions: quoted AI text and lettered options */
+.ai-quote { border-left: 3px solid var(--secondary); background: var(--secondary-soft); border-radius: 0 6px 6px 0;
+  padding: 8px 12px; margin: 8px 0 10px; font-size: 14px; }
+.ai-quote-label { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+.quote-group { margin-top: 18px; }
+.option-letter { font-weight: 700; margin-right: 2px; }
+.option-code { white-space: pre-wrap; }

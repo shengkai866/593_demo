@@ -130,8 +130,10 @@ export default function App() {
               evaluator know instead of proceeding.</p>
 
             <label className="field">
-              <span>Participant label (optional, for the facilitator)</span>
+              <span>Participant label (for the facilitator)</span>
               <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. P07" />
+              <span className="muted small">The number in the label sets the counterbalanced task order (P01-P06 cover
+                all six orders). Without a number, the order is random.</span>
             </label>
             <button className="btn btn-primary" disabled={busy || !canStart} onClick={start}>Start</button>
           </div>

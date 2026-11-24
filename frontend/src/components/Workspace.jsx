@@ -12,8 +12,8 @@ import { goalName, Collapsible } from './common.jsx'
 
 const STAGES = [
   { id: 'request', n: 1, title: 'Ask for help' },
-  { id: 'explain', n: 2, title: 'Explanations' },
-  { id: 'changes', n: 3, title: 'Proposed changes' },
+  { id: 'explain', n: 2, title: 'AI explanation' },
+  { id: 'changes', n: 3, title: 'Suggested change' },
   { id: 'comprehension', n: 4, title: 'Check your understanding' },
   { id: 'checks', n: 5, title: 'Run checks' },
 ]
@@ -123,8 +123,8 @@ export default function Workspace({ pid, idx, studyMode, onFinished }) {
   const lastRun = view.runs[view.runs.length - 1]
   const stageMeta = {
     request: sent ? 'sent' : 'start here',
-    explain: sent ? (view.proposals.length ? `${view.proposals.length} explanations` : (view.generation?.status === 'failed' ? 'generation failed' : 'not available')) : '',
-    changes: sent ? (view.applied.length ? `${view.applied.length} in effect` : 'none applied') : '',
+    explain: sent ? (view.proposals.length ? 'ready' : (view.generation?.status === 'failed' ? 'generation failed' : 'not available')) : '',
+    changes: sent ? (view.proposals.length ? (view.applied.length ? 'applied' : 'not applied') : 'not available') : '',
     comprehension: sent ? (view.comprehension ? (view.comprehension.answered ? 'answered' : 'not answered yet') : 'not available') : '',
     checks: lastRun ? `${lastRun.results.filter((r) => r.status === 'pass').length}/${lastRun.results.length} passed` : 'not run yet',
   }
@@ -266,9 +266,21 @@ const SOURCE_NOTE = {
 
 function Assignment({ view, defaultOpen, openDoc }) {
   const sc = view.scenario
+  const ex = sc.example
   return (
-    <Collapsible title="Task" defaultOpen={defaultOpen}>
+    <Collapsible title="Task instructions" defaultOpen={defaultOpen}>
       {sc.assignment && <p className="assignment">{sc.assignment}</p>}
+      {ex && (
+        <div className="example-io">
+          <div><span className="muted small">Program</span> <code>print({ex.call})</code></div>
+          <div><span className="muted small">Observed output</span> <code className="io-bad">{ex.observed}</code></div>
+          <div><span className="muted small">Expected output</span> <code className="io-good">{ex.expected}</code></div>
+        </div>
+      )}
+      {sc.source === 'example' && (
+        <p className="todo small"><b>What to do:</b> ask the AI for help, read its explanation, review the suggested
+          change and apply it, answer the questions under <b>Check your understanding</b>, then run the checks.</p>
+      )}
       {SOURCE_NOTE[sc.assignment_source] && sc.assignment && <p className="muted small">{SOURCE_NOTE[sc.assignment_source]}</p>}
       {view.docs.length > 0 && (
         <p className="small">Your materials:{' '}

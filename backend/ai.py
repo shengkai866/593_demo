@@ -97,13 +97,12 @@ TASK_INFO_SCHEMA = _obj({
 })
 
 PROPOSALS_SCHEMA = _obj({
-    "proposals": {"type": "array", "items": _obj({
-        "kind": {"type": "string", "enum": ["necessary", "ineffective", "partial"]},
+    "proposal": _obj({
         "summary": STR,
+        "code_refs": {"type": "array", "items": STR},
+        "code_explanation": STR,
         "refs": {"type": "array", "items": STR},
         "why_fails": STR,
-        "approach": STR,
-        "steps": {"type": "array", "items": STR},
         "current_behavior": STR,
         "correct_behavior": STR,
         "change": _obj({
@@ -111,7 +110,7 @@ PROPOSALS_SCHEMA = _obj({
             "claimed_effect": STR,
             "hunks": {"type": "array", "items": _obj({"file": STR, "label": STR, "old": STR, "new": STR})},
         }),
-    })},
+    }),
     "explain_again": STR,
     "new_approach": STR,
 })
@@ -130,25 +129,24 @@ Return JSON with:
   plain words what the check tests (e.g. "Missing target in a nonempty list"). Expected values must follow the
   assignment / intended behavior, NOT what the current (possibly buggy) code returns."""
 
-PROPOSALS_PROMPT = """You are generating content for a research study on how students evaluate AI help while debugging.
-Given the student's code, materials, and problem below, produce exactly 3 proposals. Each proposal is an explanation
-of what might be wrong plus a concrete code change:
-- exactly 1 proposal with kind "necessary": the correct diagnosis and a minimal change that fixes the student's problem;
-- 2 proposals with kind "ineffective" or "partial": plausible-sounding diagnoses a typical AI assistant might give.
-  "ineffective" changes must not change program behavior for the failing case (e.g. swapping operands of ==,
-  adding a redundant cast); "partial" changes fix a different edge case but not the student's problem.
-  Write their rationale and claimed_effect in the same confident tone as the necessary one - the study measures
-  whether students can tell the difference. Do not hint at which one is correct.
+PROPOSALS_PROMPT = """You are an AI programming assistant helping a university intro-programming student debug.
+Given the student's code, materials, and problem below, produce exactly ONE proposal: the explanation that best
+accounts for the root cause of the student's problem, plus ONE minimal code change that fixes it.
 
-Rules for every proposal:
-- refs: 1-3 code references of the form "file.py:N" or "file.py:N-M" using the line numbers shown.
-- why_fails, approach, steps, current_behavior, correct_behavior may cite code inline as [file.py:N] or [file.py:N-M].
-- steps: 3 short steps the student can do to investigate it themselves (no full solution).
+The proposal:
+- summary: a short phrase naming the root cause.
+- code_explanation: 1-2 sentences explaining what one relevant piece of the code does (e.g. a loop or a condition).
+  Plain text, no line numbers. code_refs: the code reference(s) that sentence describes.
+- why_fails: 1-3 sentences explaining why the original code produces the wrong behavior. refs: 1-3 code references
+  to the lines responsible.
+- Code references have the form "file.py:N" or "file.py:N-M" using the line numbers shown.
+- why_fails, current_behavior, correct_behavior may cite code inline as [file.py:N] or [file.py:N-M].
 - current_behavior: what the CURRENT code does for a concrete input. correct_behavior: what correct code should do.
-- change.hunks: 1-2 edits. "old" must be one or more COMPLETE consecutive lines copied EXACTLY from the current file
-  (same indentation, no line numbers); "new" is the replacement lines. Hunks must not overlap other proposals' hunks
-  in the same lines unless unavoidable. label briefly describes the edit.
-- Keep each text field to 1-3 sentences.
+- change.why: 1-2 sentences on how the change fixes the problem. change.claimed_effect: the result after the change
+  for the same concrete input.
+- change.hunks: the complete fix, usually 1 edit. "old" must be one or more COMPLETE consecutive lines copied EXACTLY
+  from the current file (same indentation, no line numbers); "new" is the replacement lines. Include only edits that
+  are needed for the fix (no unrelated cleanups). label briefly describes the edit.
 Also return:
 - explain_again: a simpler re-explanation of the real cause (3-4 sentences, cite lines, no full fix).
 - new_approach: a different way to investigate (e.g. compare two inputs), 2-4 steps, no fix.

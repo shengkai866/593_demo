@@ -92,8 +92,9 @@ The top-right corner shows **AI connected** if the key works, or **AI offline: s
 
 ## Using the app
 
-1. **Start**: read the consent text, check the consent and eligibility boxes, optionally enter a participant label
-   (e.g. `P07`), and click Start.
+1. **Start**: read the consent text, check the consent and eligibility boxes, enter a participant label (e.g. `P07`),
+   and click Start. The number in the label picks one of the six counterbalanced task orders
+   (`(number - 1) % 6`, see `TASK_ORDERS` in `backend/app.py`); a label without a number gets a random order.
 2. **Background questionnaire**: a short set of questions about programming/Python/AI-tool experience.
 3. **Tasks** (3 by default). Each task starts with a setup page (with `STUDY_MODE=1`, uploading is disabled and the
    task goes straight to the fixed example):
@@ -103,7 +104,9 @@ The top-right corner shows **AI connected** if the key works, or **AI offline: s
        selectable text; scanned images won't work.
      - If there are several code files, choose which one runs the program, or let the tool pick (`main.py`, or a file
        containing `__main__`).
-   - **Or use an example task**: a small built-in bug. Each participant gets the examples in a random order.
+   - **Or use an example task**: one of the three protocol tasks (`first_index`, `moving_averages`,
+     `longest_streak`), in the participant's counterbalanced order. Each task opens with the protocol's participant
+     instructions, the observed and expected output, and what to do in the tool.
 
    The tool uses what your files provide, and fills in the rest with the AI:
 
@@ -111,13 +114,18 @@ The top-right corner shows **AI connected** if the key works, or **AI offline: s
    |---|---|---|
    | Task description | You uploaded materials (the AI summarizes them) | The AI infers one from your code |
    | Checks | You uploaded `test_*.py` (each `test_` function becomes a check) | The AI writes 4-6 checks |
-   | Explanations and proposed changes | (always generated) | The AI writes 3 after you describe the problem: one real fix and two plausible ones that don't fix it, in random order |
+   | Explanation and suggested change | (always generated) | The AI writes one explanation of the root cause and one change that fixes it, after you describe the problem |
 
-   Then work through the four steps:
+   Then work through the steps:
    1. *Ask for help*: choose a goal (understand the code, fix it, or both), describe the problem, and choose what the AI can see.
-   2. *Explanations*: click code references to highlight them, and ask follow-up questions.
-   3. *Proposed changes*: review each change, try it on the checks without applying it, apply some or all of it, reject it, or undo it.
-   4. *Run checks*: test the current code, add your own checks, or open **Still stuck?** for more help.
+   2. *AI explanation*: one explanation (what the relevant code does, and why the code fails). Click code references
+      to highlight them, and ask follow-up questions.
+   3. *Suggested change*: one change with one **Apply** button (shown for every goal). You can also try it on the
+      checks without applying it, reject it, or undo it.
+   4. *Check your understanding*: the protocol's R5 question (with the AI explanation quoted under the question) and
+      two R6 questions (with the AI explanation and suggested fix quoted above them). Options keep the protocol's
+      A-D order. Required before finishing a built-in task.
+   5. *Run checks*: test the current code, add your own checks, or open **Still stuck?** for more help.
 
    Uploaded materials appear as 📄 tabs next to the code files. Click **I'm done with this task** to answer a short
    questionnaire about the task.
@@ -135,12 +143,11 @@ The backend also has endpoints for researchers:
 
 - http://localhost:8000/api/admin/sessions lists all participants and how far they got.
 - http://localhost:8000/api/admin/sessions/<participant-id> gives a per-task summary and the raw session. For each
-  proposed change, the summary shows which kind it was (necessary / ineffective / partial / incorrect), how many
-  checks it actually makes pass (`verified`), whether the participant applied or rejected it, and whether their
-  stated predicted effect for it matched its actual kind (`effect_judgment_correct`). It also includes the
-  comprehension-question answers and correctness, final pass/fail, and time on task.
+  task, the summary shows whether the participant applied or rejected the suggested change, the comprehension
+  answers (A-D) and correctness, final pass/fail, and time on task.
 - http://localhost:8000/api/admin/export.csv downloads a CSV with one row per participant per completed task, using
-  the same column names for every evaluator (background, goal, R2/R5/R6 measures, task duration, completion status)
+  the same column names for every evaluator (participant label, task order, background, goal, R2/R5/R6 answers as
+  A-D letters with 0/1 scores, whether the fix was applied, task duration, completion status)
   — this is the file to share for the Individual report's raw data and to merge for the Group analysis.
 
 To clear all test data, stop the backend and delete `backend/data/`.

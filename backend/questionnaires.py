@@ -43,13 +43,16 @@ BACKGROUND = {
     ],
 }
 
+# Post-task questions (Protocol "Post-task questions"), wording copied verbatim.
 POST_TASK = {
     "id": "posttask",
     "title": "About this task",
     "intro": "Answer based on the task you just finished.",
     "questions": [
-        {"id": "r2_goal_alignment", "type": "likert", "scale": 5, "labels": ["Not at all", "Completely"],
-         "text": "How well did the AI assistance match your stated goal?", "requirement": "R2"},
+        {"id": "r2_goal_alignment", "type": "likert", "scale": 5,
+         "labels": ["Not at all aligned", "Completely aligned"],
+         "text": "To what extent did the assistance provided by the prototype align with your initial debugging goal?",
+         "requirement": "R2"},
         {"id": "overall_satisfaction", "type": "likert", "scale": 5,
          "labels": ["Very dissatisfied", "Very satisfied"],
          "text": "Overall, how satisfied are you with the prototype's support for completing this debugging task?"},

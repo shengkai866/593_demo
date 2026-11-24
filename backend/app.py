@@ -50,6 +50,20 @@ TASKS_PER_PARTICIPANT = max(1, int(os.getenv("TASKS_PER_PARTICIPANT", "3")))
 STUDY_MODE = os.getenv("STUDY_MODE", "0").lower() in ("1", "true", "yes")
 REF_RE = re.compile(r"^[\w.\-]+\.py:\d+(-\d+)?$")
 
+# Counterbalanced task orders (all 6 orders of the 3 protocol tasks). The first three rows form a
+# Latin square, and so do the last three, so every 3 consecutive participants see each task once in
+# each position, and every 6 consecutive participants cover all orders. A participant label with a
+# number (P01, P2, 17, ...) selects row (number - 1) % 6; a label without a number gets a random row.
+TASK_ORDERS = [
+    ["first_index", "moving_averages", "longest_streak"],
+    ["moving_averages", "longest_streak", "first_index"],
+    ["longest_streak", "first_index", "moving_averages"],
+    ["first_index", "longest_streak", "moving_averages"],
+    ["longest_streak", "moving_averages", "first_index"],
+    ["moving_averages", "first_index", "longest_streak"],
+]
+assert all(sorted(o) == sorted(SCENARIOS) for o in TASK_ORDERS), "TASK_ORDERS must list every scenario"
+
 app = FastAPI(title="AI Programming Assistant Study Demo")
 app.add_middleware(
     CORSMiddleware,
@@ -76,8 +90,20 @@ def load(pid: str) -> dict:
     path = DATA_DIR / f"{pid}.json"
     if not path.exists():
         raise HTTPException(404, "Unknown participant session")
-    _cache[pid] = json.loads(path.read_text())
+    _cache[pid] = migrate(json.loads(path.read_text()))
     return _cache[pid]
+
+
+def migrate(s: dict) -> dict:
+    """Make sessions saved by older versions of the app loadable: add task fields that were
+    introduced later, and replace example tasks that no longer exist with unused current ones."""
+    for t in s["tasks"]:
+        for k, v in empty_task().items():
+            t.setdefault(k, v)
+    if any(e not in SCENARIOS for e in s.get("example_order", [])):
+        used = {(t.get("scenario") or {}).get("id") for t in s["tasks"]}
+        s["example_order"] = [e for e in SCENARIOS if e not in used]
+    return s
 
 
 def save(s: dict):
@@ -173,18 +199,14 @@ def diff_rows(before: str, after: str):
 
 
 def label_of(task, proposal_id):
-    return f"Change {task['proposal_order'].index(proposal_id) + 1}"
+    # Every task has exactly one explanation and one suggested change.
+    return "Suggested change"
 
 
 def state_label(task):
     if not task["applied"]:
         return "Original code (no changes applied)"
-    parts = []
-    for app_ in task["applied"]:
-        total = len(proposal(task, app_["proposal_id"])["change"]["hunks"])
-        n = len(app_["hunk_ids"])
-        parts.append(label_of(task, app_["proposal_id"]) + ("" if n == total else f" ({n} of {total} parts)"))
-    return "Applied: " + ", ".join(parts)
+    return "Applied: " + ", ".join(dict.fromkeys(label_of(task, a["proposal_id"]) for a in task["applied"]))
 
 
 def add_history(task, action, text):
@@ -208,54 +230,20 @@ def materials_text(materials, limit=20000) -> str:
     return "\n\n".join(f"MATERIAL {m['name']}:\n{m['text'][:limit]}" for m in materials)
 
 
-def shuffled_options(correct_text: str, wrong_texts: list) -> tuple:
-    """Build a 4-option set. Returns (options_in_display_order, correct_option_id). Both the
-    display order AND the id-to-answer mapping are randomized (ids are assigned after shuffling
-    the texts), so an id like "o1" never consistently marks the correct answer across questions.
-    The resulting order is persisted as-is in the saved session, so the shown order is on record
-    without a separate field."""
-    texts = [correct_text] + list(wrong_texts)
-    random.shuffle(texts)
-    options = [{"id": f"o{i + 1}", "text": text} for i, text in enumerate(texts)]
-    correct_id = next(o["id"] for o in options if o["text"] == correct_text)
-    return options, correct_id
-
-
 def build_comprehension(sc: dict) -> Optional[dict]:
-    """R5 (code localization) and R6 (root cause / fix rationale) comprehension questions,
-    scored 0/1 against a fixed correct answer. The correct answer always comes from the
-    *necessary* proposal; the two distractors come from the other two (plausible-but-wrong)
-    proposals for the same scenario, so they are genuinely plausible rather than throwaway
-    options. Draft wording - should get a review pass from whoever owns the study's experimental
-    design before real data collection (see Protocol Part II, "正确答案和评分规则应由负责实验设计的组员最终确定")."""
+    """R5 (code localization) and R6 (root cause / fix rationale) questions from the study protocol,
+    scored 0/1 against the protocol's answer key. Options keep the protocol's A-D order and ids.
+    The explanation texts shown with the questions are taken from the task's single proposal, so the
+    questions quote exactly what the AI panel shows. Only built-in tasks have questions."""
+    questions = sc.get("questions")
     proposals = sc.get("proposals") or []
-    necessary = next((p for p in proposals if p["kind"] == "necessary"), None)
-    others = [p for p in proposals if p is not necessary]
-    if not necessary or len(others) < 2:
+    if not questions or not proposals:
         return None
-    o1, o2 = others[0], others[1]
-
-    loc_options, loc_correct = shuffled_options(
-        f"{necessary['refs'][0]} ({necessary['summary']})",
-        [f"{o1['refs'][0]} ({o1['summary']})", f"{o2['refs'][0]} ({o2['summary']})",
-         "None of the files involved in this task"])
-    cause_options, cause_correct = shuffled_options(
-        necessary["why_fails"],
-        [o1["why_fails"], o2["why_fails"], "The code fails because of a missing import or a syntax error."])
-    rationale_options, rationale_correct = shuffled_options(
-        f"{necessary['change']['why']} {necessary['change']['claimed_effect']}",
-        [f"{o1['change']['why']} {o1['change']['claimed_effect']}",
-         f"{o2['change']['why']} {o2['change']['claimed_effect']}",
-         "The change only renames a variable or adds a comment; it does not affect behavior."])
-    return {
-        "proposal_id": necessary["id"],
-        "localization": {"prompt": "Which code does this explanation mainly refer to?",
-                         "options": loc_options, "correct": loc_correct},
-        "root_cause": {"prompt": "What is the root cause of the original failure?",
-                       "options": cause_options, "correct": cause_correct},
-        "fix_rationale": {"prompt": "How does the proposed change address the failure?",
-                          "options": rationale_options, "correct": rationale_correct},
-    }
+    p = proposals[0]
+    comp = copy.deepcopy(questions)
+    comp.update(proposal_id=p["id"], r5_explanation=p.get("code_explanation"),
+                r6_explanation=p["why_fails"], r6_fix=p["change"]["why"])
+    return comp
 
 
 def scenario_from_example(example_id: str) -> dict:
@@ -331,31 +319,36 @@ def scenario_from_upload(files_in: list, entry: Optional[str]) -> dict:
 
 
 def validate_proposals(raw: dict, files: dict) -> list:
-    out = []
-    for i, p in enumerate(raw.get("proposals") or []):
-        hunks = []
-        trial = dict(files)
-        for h in p["change"]["hunks"]:
-            h = {"id": f"h{len(hunks) + 1}", "file": h["file"], "label": h["label"] or "Edit",
-                 "old": h["old"].rstrip("\n"), "new": h["new"].rstrip("\n")}
-            try:
-                trial = apply_hunk(trial, h)
-            except Conflict:
-                continue
-            hunks.append(h)
-        if not hunks:
-            continue
-        refs = [r for r in p.get("refs", []) if REF_RE.match(r) and r.split(":")[0] in files] or \
-               [f"{hunks[0]['file']}:{next((n for n, l in enumerate(files[hunks[0]['file']].split(chr(10)), 1) if l == hunks[0]['old'].split(chr(10))[0]), 1)}"]
-        out.append({
-            "id": f"p{i + 1}", "kind": p["kind"], "summary": p["summary"], "refs": refs,
-            "why_fails": p["why_fails"], "approach": p["approach"], "steps": p["steps"][:5],
-            "current_behavior": p["current_behavior"], "correct_behavior": p["correct_behavior"],
-            "change": {"why": p["change"]["why"], "claimed_effect": p["change"]["claimed_effect"], "hunks": hunks},
-        })
-    if not any(p["kind"] == "necessary" for p in out):
+    """The AI returns ONE proposal (explanation + fix). Returns [proposal] or [] if its edit doesn't apply."""
+    p = raw.get("proposal")
+    if not p:
         return []
-    return out
+    hunks = []
+    trial = dict(files)
+    for h in p["change"]["hunks"]:
+        h = {"id": f"h{len(hunks) + 1}", "file": h["file"], "label": h["label"] or "Edit",
+             "old": h["old"].rstrip("\n"), "new": h["new"].rstrip("\n")}
+        try:
+            trial = apply_hunk(trial, h)
+        except Conflict:
+            continue
+        hunks.append(h)
+    if not hunks:
+        return []
+
+    def valid_refs(refs):
+        return [r for r in refs or [] if REF_RE.match(r) and r.split(":")[0] in files]
+
+    first = hunks[0]
+    refs = valid_refs(p.get("refs")) or \
+        [f"{first['file']}:{next((n for n, l in enumerate(files[first['file']].split(chr(10)), 1) if l == first['old'].split(chr(10))[0]), 1)}"]
+    return [{
+        "id": "p1", "kind": "necessary", "summary": p["summary"],
+        "code_refs": valid_refs(p.get("code_refs")), "code_explanation": p["code_explanation"],
+        "refs": refs, "why_fails": p["why_fails"],
+        "current_behavior": p["current_behavior"], "correct_behavior": p["correct_behavior"],
+        "change": {"why": p["change"]["why"], "claimed_effect": p["change"]["claimed_effect"], "hunks": hunks},
+    }]
 
 
 # --------------------------------------------------------------------------- #
@@ -444,9 +437,7 @@ def proposal_view(task, p):
     pv["change"] = {k: v for k, v in p["change"].items() if k != "hunks"}
     pv["change"]["hunks"] = hunks
     pv["label"] = label_of(task, p["id"])
-    pv["explanation_label"] = f"Explanation {task['proposal_order'].index(p['id']) + 1}"
-    pv["assessment"] = task["assessments"].get(p["id"])
-    pv["steps_done"] = task["steps_done"].get(p["id"], [])
+    pv["explanation_label"] = "AI explanation"
     pv["decision"] = task["decisions"].get(p["id"])
     return pv
 
@@ -467,9 +458,12 @@ def comprehension_view(task):
     comp = scen(task)["comprehension"]
     answer = task["comprehension"]
     return {
-        "questions": {k: {"prompt": comp[k]["prompt"],
+        "questions": {k: {"prompt": comp[k]["prompt"], "code_options": bool(comp[k].get("code_options")),
                           "options": [{"id": o["id"], "text": o["text"]} for o in comp[k]["options"]]}
                      for k in COMPREHENSION_KEYS},
+        "r5_explanation": comp.get("r5_explanation"),
+        "r6_explanation": comp.get("r6_explanation"),
+        "r6_fix": comp.get("r6_fix"),
         "answered": answer is not None,
         "answers": (answer or {}).get("answers"),
     }
@@ -489,7 +483,7 @@ def task_view(s, idx):
             "title": sc["title"], "assignment": sc["assignment"], "assignment_source": sc["assignment_source"],
             "entry": sc["entry"], "knowledge": sc["knowledge"], "rules": sc["rules"],
             "problem_hint": sc["problem_hint"], "source": sc["source"], "checks_source": sc["checks_source"],
-            "setup_warning": sc.get("setup_warning"),
+            "setup_warning": sc.get("setup_warning"), "example": sc.get("example"),
         },
         "files": files,
         "file_order": list(sc["files"].keys()),
@@ -563,7 +557,7 @@ class ContextIn(BaseModel):
 
 class ApplyIn(BaseModel):
     proposal_id: str
-    hunk_ids: List[str]
+    hunk_ids: Optional[List[str]] = None  # None = the whole change (the only option in the UI)
 
 
 class UndoIn(BaseModel):
@@ -578,26 +572,13 @@ class DecisionIn(BaseModel):
     note: str = ""
 
 
-class AssessIn(BaseModel):
-    proposal_id: str
-    rationale_supports: Optional[str] = None
-    predicted_effect: Optional[str] = None
-    note: str = ""
-
-
-class StepIn(BaseModel):
-    proposal_id: str
-    step: int
-    done: bool
-
-
 class SimulateIn(BaseModel):
     proposal_id: str
     hunk_ids: List[str]
 
 
 class ComprehensionIn(BaseModel):
-    answers: Dict[str, str]  # {"localization": "o2", "root_cause": "o1", "fix_rationale": "o4"}
+    answers: Dict[str, str]  # {"localization": "C", "root_cause": "B", "fix_rationale": "C"}
 
 
 class CheckIn(BaseModel):
@@ -651,24 +632,35 @@ def empty_task():
     return {
         "scenario": None, "proposal_order": [], "started_at": None, "finished_at": None,
         "goal": {"goals": [], "text": ""}, "goal_history": [], "request": None, "generation": None,
-        "context_materials": [], "applied": [], "history": [], "decisions": {}, "assessments": {},
-        "steps_done": {}, "custom_checks": [], "runs": [], "conversation": [], "latest_output": None,
+        "context_materials": [], "applied": [], "history": [], "decisions": {},
+        "custom_checks": [], "runs": [], "conversation": [], "latest_output": None,
         "office_hours": None, "work_done": False, "posttask": None, "comprehension": None,
     }
+
+
+def task_order_for(label: str) -> tuple:
+    """(order_index, order_source) for a participant label; see TASK_ORDERS."""
+    m = re.search(r"\d+", label)
+    if m and int(m.group()) > 0:
+        return (int(m.group()) - 1) % len(TASK_ORDERS), "label"
+    return random.randrange(len(TASK_ORDERS)), "random"
 
 
 @app.post("/api/sessions")
 def create_session(body: NewSessionIn):
     pid = uuid.uuid4().hex[:10]
-    examples = list(SCENARIOS.keys())
-    random.Random(pid).shuffle(examples)
+    label = body.participant_label.strip()
+    order_index, order_source = task_order_for(label)
+    examples = list(TASK_ORDERS[order_index])
     s = {
-        "pid": pid, "label": body.participant_label.strip(), "created_at": now(),
+        "pid": pid, "label": label, "created_at": now(),
         "ai_enabled": ai.ENABLED, "ai_model": ai.MODEL if ai.ENABLED else None,
-        "example_order": examples, "tasks": [empty_task() for _ in range(TASKS_PER_PARTICIPANT)],
+        "example_order": examples, "task_order": list(examples), "order_index": order_index + 1,
+        "order_source": order_source, "tasks": [empty_task() for _ in range(TASKS_PER_PARTICIPANT)],
         "background": None, "final": None, "events": [],
     }
-    log_event(s, None, "session_created", {"example_order": examples})
+    log_event(s, None, "session_created", {"example_order": examples, "order_index": order_index + 1,
+                                           "order_source": order_source})
     with _lock:
         save(s)
     return session_summary(s)
@@ -937,9 +929,9 @@ def post_apply(pid: str, idx: int, body: ApplyIn):
         p = proposal(task, body.proposal_id)
         already = set(applied_keys(task))
         hunk_ids = [h["id"] for h in p["change"]["hunks"]
-                    if h["id"] in body.hunk_ids and (p["id"], h["id"]) not in already]
+                    if (body.hunk_ids is None or h["id"] in body.hunk_ids) and (p["id"], h["id"]) not in already]
         if not hunk_ids:
-            raise HTTPException(400, "Select at least one part of the change that is not already applied")
+            raise HTTPException(400, "This change is already applied")
         files = replay(task)
         try:
             for hid in hunk_ids:
@@ -949,9 +941,7 @@ def post_apply(pid: str, idx: int, body: ApplyIn):
         task["applied"].append({"app_id": uuid.uuid4().hex[:8], "proposal_id": p["id"], "hunk_ids": hunk_ids,
                                 "at": now()})
         task["decisions"].pop(p["id"], None)
-        total = len(p["change"]["hunks"])
-        add_history(task, "apply", f"Applied {label_of(task, p['id'])}"
-                    + ("" if len(hunk_ids) == total else f" ({len(hunk_ids)} of {total} parts)"))
+        add_history(task, "apply", f"Applied {label_of(task, p['id'])}")
         log_event(s, idx, "change_applied", {"proposal": p["id"], "kind": p["kind"], "hunks": hunk_ids})
         save(s)
         return task_view(s, idx)
@@ -1005,18 +995,6 @@ def post_decision(pid: str, idx: int, body: DecisionIn):
         return task_view(s, idx)
 
 
-@app.post("/api/sessions/{pid}/tasks/{idx}/assess")
-def post_assess(pid: str, idx: int, body: AssessIn):
-    with _lock:
-        s = load(pid)
-        task = get_task(s, idx)
-        p = proposal(task, body.proposal_id)
-        task["assessments"][p["id"]] = {**body.model_dump(), "at": now()}
-        log_event(s, idx, "assessment", {"kind": p["kind"], **body.model_dump()})
-        save(s)
-        return task_view(s, idx)
-
-
 @app.post("/api/sessions/{pid}/tasks/{idx}/comprehension")
 def post_comprehension(pid: str, idx: int, body: ComprehensionIn):
     with _lock:
@@ -1037,20 +1015,6 @@ def post_comprehension(pid: str, idx: int, body: ComprehensionIn):
         task["comprehension"] = {"at": now(), "answers": dict(body.answers), "correct": correct}
         add_history(task, "comprehension", "Answered the comprehension questions")
         log_event(s, idx, "comprehension_submitted", {"answers": body.answers, "correct": correct})
-        save(s)
-        return task_view(s, idx)
-
-
-@app.post("/api/sessions/{pid}/tasks/{idx}/step")
-def post_step(pid: str, idx: int, body: StepIn):
-    with _lock:
-        s = load(pid)
-        task = get_task(s, idx)
-        proposal(task, body.proposal_id)
-        done = set(task["steps_done"].get(body.proposal_id, []))
-        (done.add if body.done else done.discard)(body.step)
-        task["steps_done"][body.proposal_id] = sorted(done)
-        log_event(s, idx, "step_marked", body.model_dump())
         save(s)
         return task_view(s, idx)
 
@@ -1157,9 +1121,6 @@ def action_log(task) -> str:
         lines.append(f"Learner's problem description: {req['problem']}")
     for h in task["history"]:
         lines.append(f"- {h['text']}")
-    done_steps = sum(len(v) for v in task["steps_done"].values())
-    if done_steps:
-        lines.append(f"- Marked {done_steps} investigation step(s) as done")
     if not task["runs"]:
         lines.append("- Has NOT run the checks yet")
     else:
@@ -1201,9 +1162,8 @@ def scripted_answer(task, mode, body: AskIn) -> str:
         return office_hours_template(task)
     p = proposal(task, body.proposal_id) if body.proposal_id else None
     if p:
-        steps = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(p["steps"]))
         return (f"(Scripted answer: the AI is not connected.) This explanation focuses on "
-                f"{', '.join('[' + r + ']' for r in p['refs'])}. Try these steps:\n{steps}")
+                f"{', '.join('[' + r + ']' for r in p['refs'])}. {p['why_fails']}")
     return ("(Scripted answer: the AI is not connected.) Try tracing the failing check by hand, line by line, "
             "and compare the value returned with the expected value.")
 
@@ -1218,9 +1178,11 @@ def post_ask(pid: str, idx: int, body: AskIn):
         context = build_ai_context(task)
         if body.proposal_id:
             p = proposal(task, body.proposal_id)
-            context += (f"\n\nTHE STUDENT IS ASKING ABOUT {label_of(task, p['id'])} / its explanation:\n"
-                        f"Refers to: {', '.join(p['refs'])}\nWhy the code fails (AI's earlier explanation): {p['why_fails']}\n"
-                        f"Suggested approach: {p['approach']}\nProposed edit rationale: {p['change']['why']}\n"
+            context += (f"\n\nTHE STUDENT IS ASKING ABOUT THE AI EXPLANATION / {label_of(task, p['id'])}:\n"
+                        + (f"What the code does (AI's earlier explanation): {p['code_explanation']}\n"
+                           if p.get("code_explanation") else "")
+                        + f"Refers to: {', '.join(p['refs'])}\nWhy the code fails (AI's earlier explanation): {p['why_fails']}\n"
+                        f"Proposed edit rationale: {p['change']['why']}\n"
                         f"Claimed effect: {p['change']['claimed_effect']}\n"
                         + "\n".join(f"Edit: {h['file']}: `{h['old']}` -> `{h['new']}`" for h in p["change"]["hunks"]))
         if body.ref:
@@ -1291,24 +1253,6 @@ def post_posttask(pid: str, idx: int, body: Answers):
 # --------------------------------------------------------------------------- #
 # Researcher endpoints
 # --------------------------------------------------------------------------- #
-# What predicted_effect (ChangesPanel.jsx self-report) SHOULD be if the learner correctly judged
-# a proposal's actual effect, given its researcher-only `kind`. Used to auto-score the updated R6
-# requirement ("recognize that a proposed fix has no effect") without a separate quiz question.
-EXPECTED_EFFECT_BY_KIND = {"necessary": "fixes", "partial": "partial", "ineffective": "no_effect", "incorrect": "worse"}
-
-
-def effect_judgment_correct(kind, predicted_effect):
-    expected = EXPECTED_EFFECT_BY_KIND.get(kind)
-    if not expected or not predicted_effect:
-        return None
-    return int(predicted_effect == expected)
-
-
-def effect_judgment_accuracy(props) -> Optional[float]:
-    scored = [p["effect_judgment_correct"] for p in props if p["effect_judgment_correct"] is not None]
-    return round(sum(scored) / len(scored), 2) if scored else None
-
-
 def outcome_summary(s):
     rows = []
     for i, t in enumerate(s["tasks"]):
@@ -1318,15 +1262,12 @@ def outcome_summary(s):
             continue
         applied = {a["proposal_id"] for a in t["applied"]}
         props = []
-        for pos, pid_ in enumerate(t["proposal_order"]):
+        for pid_ in t["proposal_order"]:
             p = next(p for p in sc["proposals"] if p["id"] == pid_)
-            assessment = t["assessments"].get(pid_)
             props.append({
-                "label": f"Change {pos + 1}", "proposal": pid_, "kind": p["kind"], "verified": p.get("verified"),
+                "label": label_of(t, pid_), "proposal": pid_, "kind": p["kind"], "verified": p.get("verified"),
                 "final": "applied" if pid_ in applied else ("rejected" if pid_ in t["decisions"] else "no decision"),
                 "reject_reason": (t["decisions"].get(pid_) or {}).get("reason"),
-                "assessment": assessment,
-                "effect_judgment_correct": effect_judgment_correct(p["kind"], (assessment or {}).get("predicted_effect")),
             })
         rows.append({"task": i, "source": sc["source"], "scenario": sc["id"], "title": sc["title"],
                      "files": list(sc["files"]), "materials": [m["name"] for m in sc["materials"]],
@@ -1334,9 +1275,6 @@ def outcome_summary(s):
                      "duration_s": (t["finished_at"] - t["started_at"]) if t["finished_at"] and t["started_at"] else None,
                      "goal_changes": sum(1 for g in t["goal_history"] if g["source"] == "edit"),
                      "runs": len(t["runs"]), "asks": len(t["conversation"]), "proposals": props,
-                     # Fraction of proposals (necessary + ineffective/partial/incorrect) whose actual
-                     # effect the learner judged correctly - the updated R6 "ineffective fix" measure.
-                     "effect_judgment_accuracy": effect_judgment_accuracy(props),
                      # R5/R6 scored comprehension questions (0/1 per question); None if not answered.
                      "comprehension": {"answers": t["comprehension"]["answers"],
                                        "correct": t["comprehension"]["correct"]} if t.get("comprehension") else None})
@@ -1362,7 +1300,8 @@ def admin_session(pid: str):
 # Unified CSV export (Protocol Part II: "one row per participant per task")
 # --------------------------------------------------------------------------- #
 CSV_COLUMNS = [
-    "participant_id", "task_position", "task_id", "task_source",
+    "participant_id", "participant_label", "task_order_group", "task_order",
+    "task_position", "task_id", "task_source",
     "programming_proficiency", "python_experience", "python_frequency",
     "ai_usage_frequency", "ai_tools_used",
     "goal_selected", "goal_changes",
@@ -1370,8 +1309,7 @@ CSV_COLUMNS = [
     "r5_answer_id", "r5_correct",
     "r6_cause_answer_id", "r6_cause_correct",
     "r6_rationale_answer_id", "r6_rationale_correct",
-    "effect_judgment_accuracy",
-    "proposal_order", "task_duration_seconds", "completion_status",
+    "change_applied", "task_duration_seconds", "completion_status",
 ]
 
 
@@ -1387,7 +1325,9 @@ def csv_rows(s, summary):
         comp = t.get("comprehension") or {}
         answers, correct = comp.get("answers") or {}, comp.get("correct") or {}
         rows.append({
-            "participant_id": s["pid"], "task_position": i + 1, "task_id": sc["id"], "task_source": sc["source"],
+            "participant_id": s["pid"], "participant_label": s.get("label", ""),
+            "task_order_group": s.get("order_index", ""), "task_order": "|".join(s.get("task_order") or []),
+            "task_position": i + 1, "task_id": sc["id"], "task_source": sc["source"],
             "programming_proficiency": bg.get("proficiency", ""), "python_experience": bg.get("python_experience", ""),
             "python_frequency": bg.get("python_frequency", ""), "ai_usage_frequency": bg.get("ai_usage_frequency", ""),
             "ai_tools_used": ";".join(bg.get("ai_tools_used") or []),
@@ -1398,8 +1338,7 @@ def csv_rows(s, summary):
             "r6_cause_answer_id": answers.get("root_cause", ""), "r6_cause_correct": correct.get("root_cause", ""),
             "r6_rationale_answer_id": answers.get("fix_rationale", ""),
             "r6_rationale_correct": correct.get("fix_rationale", ""),
-            "effect_judgment_accuracy": row["effect_judgment_accuracy"] if row["effect_judgment_accuracy"] is not None else "",
-            "proposal_order": "|".join(t["proposal_order"]),
+            "change_applied": int(bool(t["applied"])),
             "task_duration_seconds": round(row["duration_s"], 1) if row["duration_s"] is not None else "",
             "completion_status": "completed" if t.get("work_done") else "not_completed",
         })
